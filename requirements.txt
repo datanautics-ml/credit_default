@@ -1,0 +1,55 @@
+# requirements.txt
+# Core ML and Data Science
+pandas
+numpy==1.25
+scikit-learn
+xgboost
+lightgbm
+statsmodels
+
+# Materials Science
+pymatgen
+matminer
+mp-api
+
+# MLOps and Orchestration
+prefect
+mlflow
+feast
+dvc
+great-expectations
+
+# Model Explainability
+shap
+lime
+
+# Data Storage and Processing
+sqlalchemy
+# sqlite3  # Built-in with Python
+pyarrow
+fastparquet
+
+# Web App
+streamlit
+plotly
+streamlit-plotly-events
+
+# Utilities
+python-dotenv
+pydantic
+click
+tqdm
+joblib
+requests
+
+# Development and Testing
+pytest
+pytest-cov
+black
+isort
+flake8
+mypy
+
+# Jupyter for development
+jupyter
+jupyterlab
