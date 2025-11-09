@@ -7,11 +7,6 @@ xgboost
 lightgbm
 statsmodels
 
-# Materials Science
-pymatgen
-matminer
-mp-api
-
 # MLOps and Orchestration
 prefect
 mlflow

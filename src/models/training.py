@@ -7,10 +7,10 @@ import numpy as np
 from typing import Dict, List, Tuple, Any, Optional
 from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
 from sklearn.preprocessing import StandardScaler, RobustScaler
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingRegressor
-from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
-from sklearn.svm import SVR
-from sklearn.neural_network import MLPRegressor
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression, RidgeClassifier
+from sklearn.svm import SVC
+# from sklearn.neural_network import MLPRegressor
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 import xgboost as xgb
 import lightgbm as lgb
@@ -24,6 +24,7 @@ import json
 import os
 from src.config.settings import settings
 from src.utils.logging import setup_logging
+from sklearn.utils.class_weight import compute_sample_weight
 logger = setup_logging(__name__)
 
 class ModelTrainer:
@@ -78,29 +79,36 @@ class ModelTrainer:
     def _setup_models(self) -> Dict[str, Any]:
         """Setup ML models with hyperparameter grids"""
         models = {
-            'linear_regression': {
-                'model': LinearRegression(),
+            'logistic_regression': {
+                'model': LogisticRegression(),
                 'params': {}
             },
             'ridge': {
-                'model': Ridge(),
+                'model': RidgeClassifier(),
                 'params': {
                     'alpha': [0.1, 1.0, 10.0, 100.0]
                 }
             },
-            'lasso': {
-                'model': Lasso(),
+            'svc': {
+                'model': SVC(probability=True),
                 'params': {
-                    'alpha': [0.01, 0.1, 1.0, 10.0]
+                    'C': [0.1, 1.0, 10.0],
+                    'kernel': ['linear', 'rbf']
                 }
             },
-            'elastic_net': {
-                'model': ElasticNet(),
-                'params': {
-                    'alpha': [0.01, 0.1, 1.0],
-                    'l1_ratio': [0.1, 0.5, 0.9]
-                }
-            },
+            # # 'lasso': {
+            # #     'model': Lasso(),
+            # #     'params': {
+            # #         'alpha': [0.01, 0.1, 1.0, 10.0]
+            # #     }
+            # # },
+            # # 'elastic_net': {
+            # #     'model': ElasticNet(),
+            # #     'params': {
+            # #         'alpha': [0.01, 0.1, 1.0],
+            # #         'l1_ratio': [0.1, 0.5, 0.9]
+            # #     }
+            # },
             'random_forest': {
                 'model': RandomForestClassifier(random_state=settings.RANDOM_STATE),
                 'params': {
@@ -111,7 +119,7 @@ class ModelTrainer:
                 }
             },
             'gradient_boosting': {
-                'model': GradientBoostingRegressor(random_state=settings.RANDOM_STATE),
+                'model': GradientBoostingClassifier(random_state=settings.RANDOM_STATE),
                 'params': {
                     'n_estimators': [100, 200],
                     'learning_rate': [0.05, 0.1, 0.2],
@@ -119,7 +127,7 @@ class ModelTrainer:
                 }
             },
             'xgboost': {
-                'model': xgb.XGBRegressor(random_state=settings.RANDOM_STATE),
+                'model': xgb.XGBClassifier(random_state=settings.RANDOM_STATE),
                 'params': {
                     'n_estimators': [100, 200, 300],
                     'learning_rate': [0.05, 0.1, 0.2],
@@ -128,7 +136,7 @@ class ModelTrainer:
                 }
             },
             'lightgbm': {
-                'model': lgb.LGBMRegressor(random_state=settings.RANDOM_STATE, verbose=-1),
+                'model': lgb.LGBMClassifier(random_state=settings.RANDOM_STATE, verbose=-1),
                 'params': {
                     'n_estimators': [100, 200, 300],
                     'learning_rate': [0.05, 0.1, 0.2],
@@ -146,8 +154,10 @@ class ModelTrainer:
             # }
         }
         
+        
         logger.info(f"Setup {len(models)} ML models")
         return models
+    
     
     def _setup_scalers(self) -> Dict[str, Any]:
         """Setup feature scalers"""
@@ -169,18 +179,6 @@ class ModelTrainer:
         self.X_train = scaler.fit_transform(self.X_train)
         self.X_test = scaler.transform(self.X_test)
         self.scalers[scaler_type] = scaler
-    
-    def _train_model(self, model_name: str, model: Any, params: Optional[Dict[str, Any]] = None) -> None:
-        """Train a given model with optional hyperparameter tuning"""
-        if params:
-            grid_search = GridSearchCV(model, params, cv=5, scoring='neg_mean_absolute_error')
-            grid_search.fit(self.X_train, self.y_train)
-            best_model = grid_search.best_estimator_
-        else:
-            best_model = model
-            best_model.fit(self.X_train, self.y_train)
-        
-        self.models[model_name] = best_model   
 
 
     def prepare_data(
@@ -250,6 +248,8 @@ class ModelTrainer:
         model_config = self.models[model_name]
         base_model = model_config['model']
         param_grid = model_config['params']
+        # compute per-sample weights to account for class imbalance
+        sample_weight = compute_sample_weight(class_weight='balanced', y=y_train)
         
         with mlflow.start_run(run_name=f"{model_name}_training"):
             # Log parameters
@@ -265,29 +265,30 @@ class ModelTrainer:
                     base_model, 
                     param_grid, 
                     cv=settings.CV_FOLDS, 
-                    scoring='neg_mean_absolute_error',
+                    scoring='roc_auc',
                     n_jobs=-1,
-                    verbose=1
+                    verbose=1,
+                    
                 )
                 
-                grid_search.fit(X_train, y_train)
+                grid_search.fit(X_train, y_train, sample_weight=sample_weight)
                 best_model = grid_search.best_estimator_
                 best_params = grid_search.best_params_
-                best_score = -grid_search.best_score_  # Convert back to positive MAE
+                best_score = grid_search.best_score_  # Convert back to positive MAE
                 
                 # Log best parameters
                 for param, value in best_params.items():
                     mlflow.log_param(f"best_{param}", value)
                 
-                mlflow.log_metric("cv_mae", best_score)
+                mlflow.log_metric("cv_auc", best_score)
                 
                 logger.info(f"Best parameters for {model_name}: {best_params}")
-                logger.info(f"Best CV MAE: {best_score:.4f}")
+                logger.info(f"Best CV auc: {best_score:.4f}")
                 
             else:
                 logger.info(f"Training {model_name} with default parameters")
                 best_model = base_model
-                best_model.fit(X_train, y_train)
+                best_model.fit(X_train, y_train, sample_weight=sample_weight)
                 best_params = {}
                 best_score = None
             
@@ -312,7 +313,9 @@ class ModelTrainer:
                 'model': best_model,
                 'best_params': best_params,
                 'cv_score': best_score
-            }
+            }    
+
+
     def evaluate_model(
         self, 
         model_name: str, 
@@ -377,4 +380,123 @@ class ModelTrainer:
             logger.info(f"  {metric.upper()}: {value:.4f}")
         
         return metrics
+    
+    def train_all_models(
+        self, 
+        X_train: pd.DataFrame, 
+        y_train: pd.Series,
+        X_test: pd.DataFrame, 
+        y_test: pd.Series,
+        use_hyperparameter_optimization: bool = True
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Train and evaluate all models
+        
+        Args:
+            X_train: Training features
+            y_train: Training targets
+            X_test: Test features
+            y_test: Test targets
+            use_hyperparameter_optimization: Whether to use hyperparameter optimization
+            
+        Returns:
+            Results for all models
+        """
+        logger.info("Training all models")
+        
+        all_results = {}
+        
+        for model_name in self.models.keys():            
+            try:
+                if model_name in ['logistic_regression','ridge', 'svc']:
+                    logger.info(f"Scaline data for model: {model_name}")
+                    X_train_scaled = self.scalers['standard'].fit_transform(X_train)
+                    X_test_scaled = self.scalers['standard'].transform(X_test)
+                    
+                    # Train model
+                    training_result = self.train_model(
+                        model_name, X_train_scaled, y_train, use_hyperparameter_optimization
+                    )
+                    # Evaluate model
+                    evaluation_result = self.evaluate_model(model_name, X_test_scaled, y_test)
+
+                    # Combine results
+                    all_results[model_name] = {
+                    'training': training_result,
+                    'evaluation': evaluation_result
+                    }
+                else:
+                    # Train model
+                    training_result = self.train_model(
+                        model_name, X_train, y_train, use_hyperparameter_optimization
+                    )
+                    
+                    # Evaluate model
+                    evaluation_result = self.evaluate_model(model_name, X_test, y_test)
+                
+                    # Combine results
+                    all_results[model_name] = {
+                        'training': training_result,
+                        'evaluation': evaluation_result
+                    }
+                
+            except Exception as e:
+                logger.error(f"Failed to train {model_name}: {e}")
+                continue
+        
+        self.results = all_results
+        logger.info(f"Completed training {len(all_results)} models")
+        
+        return all_results
+    
+    def get_best_model(self) -> Tuple[str, Any, Dict[str, float]]:
+        """
+        Get the best performing model based on test MAE
+        
+        Returns:
+            Model name, model object, and metrics
+        """
+        if not self.results:
+            raise ValueError("No models trained yet")
+        
+        best_model_name = None
+        best_score = float('-inf')
+        
+        for model_name, results in self.results.items():
+            score = results['evaluation']['f1']
+            if score > best_score:
+                best_score = score
+                best_model_name = model_name
+        
+        best_model = self.trained_models[best_model_name]['model']
+        best_metrics = self.results[best_model_name]['evaluation']
+        
+        logger.info(f"Best model: {best_model_name} (F1: {best_score:.4f})")
+        
+        return best_model_name, best_model, best_metrics
+    
+    def save_models(self, output_dir: Optional[Path] = None) -> Path:
+        """Save all trained models"""
+        if output_dir is None:
+            output_dir = settings.MODELS_DIR
+        
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        for model_name, model_info in self.trained_models.items():
+            model_path = output_dir / f"{model_name}_model.joblib"
+            joblib.dump(model_info['model'], model_path)
+            logger.info(f"Saved {model_name} to {model_path}")
+        
+        # Save results summary
+        results_path = output_dir / "training_results.json"
+        results_summary = {}
+        for model_name, results in self.results.items():
+            results_summary[model_name] = results['evaluation']
+        
+        with open(results_path, 'w') as f:
+            json.dump(results_summary, f, indent=2)
+        
+        logger.info(f"Models saved to {output_dir}")
+        return output_dir
         
