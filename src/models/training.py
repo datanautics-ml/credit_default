@@ -451,7 +451,7 @@ class ModelTrainer:
     
     def get_best_model(self) -> Tuple[str, Any, Dict[str, float]]:
         """
-        Get the best performing model based on test MAE
+        Get the best performing model based on test score
         
         Returns:
             Model name, model object, and metrics
