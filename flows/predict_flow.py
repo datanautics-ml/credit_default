@@ -37,7 +37,7 @@ def load_new_data() -> pd.DataFrame:
     logger.info(f"Latest processed data file: {latest_file_path}")
     
     logger.info(f"Loading data from {settings.DATA_DIR}")
-    data = pd.read_csv(latest_file_path)
+    data = pd.read_csv(latest_file_path, header=0)
     logger.info(f"Data shape: {data.shape}")
     # Copy the latest file to the processed data directory
     try:
@@ -52,139 +52,58 @@ def load_new_data() -> pd.DataFrame:
         logger.error(f"Failed to copy file to processed dir: {e}")
         raise
     return data
+
 @task(name="Load Model")
 def load_model() -> Any:
     """Load  ML model from disk"""
     logger = get_run_logger()
     logger.info(f"Loading model from {settings.MODELS_DIR}")
+
     with settings.MODELS_DIR.joinpath("training_results.json").open("r") as f:
         training_results = json.load(f)
-
-    best_model_name = None
-    best_score = float('-inf')
     
+    best_model_name = None
+    best_score = float('-inf')    
     for model_name, results in training_results.items():
         score = training_results[model_name]['f1']
         if score > best_score:
             best_score = score
             best_model_name = model_name    
-    model_path = settings.MODELS_DIR / f"{best_model_name}_model.joblib"
+    model_path = settings.MODELS_DIR / f"{best_model_name}_model.joblib"    
     logger.info(f"Best model: {best_model_name}")
+    
     try:
         model = joblib.load(model_path)
-        logger.info("Model loaded successfully")
-        return model
+        if best_model_name in ['logistic_regression', 'svc', 'ridge']:
+            scaler_path = settings.MODELS_DIR / "standard_scaler.joblib"
+            scaler = joblib.load(scaler_path)            
+            logger.info("Model loaded successfully")
+            return model, scaler
+        else:
+            logger.info("Model loaded successfully")
+            return model, None            
     except Exception as e:
         logger.error(f"Failed to load model: {e}")
         raise
-@task(name="Train Models")
-def train_ml_models(
-    dataset: pd.DataFrame,
-    use_hyperparameter_optimization: bool = True
-) -> Dict[str, Any]:
-    """
-    Train multiple ML models
-    
-    Args:
-        dataset: dataframe containing features and target
-        use_hyperparameter_optimization: Whether to use hyperparameter optimization
-        
-    Returns:
-        Training results for all models
-    """
+
+@task(name="Make Predictions")
+def make_predictions(model: Any, dataset: pd.DataFrame, scaler: Any = None) -> pd.DataFrame:
+    """Make predictions using the loaded model"""
     logger = get_run_logger()
-    logger.info("Starting ML model training")
+    logger.info("Making predictions")
+    # dataset.drop(columns=["MONTH"], errors='ignore', inplace=True)
+    features = [col for col in dataset.columns if col not in ["default payment next month", "MONTH", "ID"]]
+    if scaler:
+        X = dataset[features]
+        X_scaled = scaler.transform(X)
+        predictions = model.predict(X_scaled)
+    else:
+        X = dataset[features]
+        predictions = model.predict(X)
+    dataset['predictions'] = predictions
     
-    try:
-        trainer = ModelTrainer()
-        # Prepare data
-        X_train, X_test, y_train, y_test = trainer.prepare_data(dataset)
-
-        # Train all models
-        results = trainer.train_all_models(
-            X_train, y_train, X_test, y_test,
-            use_hyperparameter_optimization=use_hyperparameter_optimization
-        )
-        
-        # Get best model
-        best_model_name, best_model, best_metrics = trainer.get_best_model()
-        
-        # Save models
-        models_dir = trainer.save_models()
-        
-        logger.info(f"Training completed. Best model: {best_model_name}")
-        
-        # Create model comparison table
-        comparison_data = []
-        for model_name, model_results in results.items():
-            metrics = model_results['evaluation']
-            comparison_data.append({
-                'Model': model_name.replace('_', ' ').title(),
-                'Accuracy': f"{metrics['accuracy']:.4f}",
-                'Recall': f"{metrics['recall']:.4f}",
-                'AUC': f"{metrics['roc_auc']:.4f}"
-            })
-        
-        # Sort by AUC (higher is better)
-        comparison_data.sort(key=lambda x: float(x['AUC']), reverse=True)
-        
-        create_table_artifact(
-            key="model-comparison",
-            table={
-                'Model': [row['Model'] for row in comparison_data],
-                'Accuracy': [row['Accuracy'] for row in comparison_data],
-                'Recall': [row['Recall'] for row in comparison_data],
-                'AUC': [row['AUC'] for row in comparison_data]
-            },
-            description="ML model performance comparison (sorted by AUC)"
-        )
-        
-        # Create detailed results summary
-        results_summary = f"""
-# ML Training Results
-
-## Best Performing Model
-**{best_model_name.replace('_', ' ').title()}**
-- **Accuracy**: {best_metrics['accuracy']:.4f} eV
-- **Recall**: {best_metrics['recall']:.4f} eV
-- **AUC**: {best_metrics['roc_auc']:.4f}
-
-## All Models Performance
-"""
-        
-        for i, row in enumerate(comparison_data, 1):
-            emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else "📊"
-            results_summary += f"\n{emoji} **{row['Model']}**: Accuracy={row['Accuracy']}, Recall={row['Recall']}, AUC={row['AUC']}"
-        
-        results_summary += f"""
-
-## Training Configuration
-- **Hyperparameter Optimization**: {'✅ Enabled' if use_hyperparameter_optimization else '❌ Disabled'}
-- **Cross-Validation Folds**: {settings.CV_FOLDS}
-- **Models Trained**: {len(results)}
-- **Models Saved**: `{models_dir}`
-
-## MLflow Tracking
-- **Tracking URI**: {settings.MLFLOW_TRACKING_URI}
-- **Experiment**: {settings.MLFLOW_EXPERIMENT_NAME}
-        """
-        
-        create_markdown_artifact(
-            key="training-results-summary",
-            markdown=results_summary,
-            description="Comprehensive ML training results and model comparison"
-        )
-        
-        return {
-            'results': results,
-            'best_model_name': best_model_name,
-            'best_metrics': best_metrics,
-            'models_saved_to': str(models_dir)
-        }
-        
-    except Exception as e:
-        logger.error(f"ML training failed: {e}")
-        raise
+    logger.info("Predictions completed")
+    return dataset
 
 @flow(name="ML Model Training Flow")
 def ml_predict_flow(
@@ -202,7 +121,14 @@ def ml_predict_flow(
     # Load data
     dataset = load_new_data()
     # Load model
-    model = load_model()
+    model, scaler = load_model()
+
+    # Make predictions
+    predictions = make_predictions(model=model, dataset=dataset, scaler=scaler)
+
+    # Temp: print classification report
+    from sklearn.metrics import classification_report
+    print(classification_report(predictions["default payment next month"], predictions["predictions"]))
     
     # Train models
     # training_results = train_ml_models(

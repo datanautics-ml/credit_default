@@ -487,7 +487,12 @@ class ModelTrainer:
             model_path = output_dir / f"{model_name}_model.joblib"
             joblib.dump(model_info['model'], model_path)
             logger.info(f"Saved {model_name} to {model_path}")
-        
+        # save scalers
+        for scaler_name, scaler in self.scalers.items():
+            scaler_path = output_dir / f"{scaler_name}_scaler.joblib"
+            joblib.dump(scaler, scaler_path)
+            logger.info(f"Saved {scaler_name} scaler to {scaler_path}")
+
         # Save results summary
         results_path = output_dir / "training_results.json"
         results_summary = {}
