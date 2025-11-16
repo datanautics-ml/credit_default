@@ -21,10 +21,12 @@ from src.utils.logging import setup_logging
 import joblib
 from evidently import Report
 from evidently.presets import DataDriftPreset, ClassificationPreset
-from evidently import Dataset
-from evidently import DataDefinition
-from evidently import BinaryClassification
+from evidently import Dataset, DataDefinition, BinaryClassification
+from evidently.metrics import F1Score
+from evidently.tests import gte, lte,lt
+from evidently.future.tests import Reference
 import datetime as dt
+from flows.train_flow import ml_training_flow
 
 @task(name="Load Data ", retries=1)
 def load_new_data() -> pd.DataFrame:
@@ -86,7 +88,7 @@ def make_predictions(model: Any, dataset: pd.DataFrame, latest_file: str, scaler
     logger = get_run_logger()
     logger.info("Making predictions")
     # dataset.drop(columns=["MONTH"], errors='ignore', inplace=True)
-    features = [col for col in dataset.columns if col not in ["default payment next month", "MONTH", "ID"]]
+    features = [col for col in dataset.columns if col not in ["default payment next month", "MONTH", "ID", "predictions"]]
     if scaler:
         X = dataset[features]
         X_scaled = scaler.transform(X)
@@ -95,8 +97,15 @@ def make_predictions(model: Any, dataset: pd.DataFrame, latest_file: str, scaler
         X = dataset[features]
         predictions = model.predict(X)
     dataset['predictions'] = predictions
-     
+    logger.info("Predictions made successfully")
+    return dataset
+
+@task(name="Save Predictions")
+def save_predictions(dataset: pd.DataFrame, latest_file: str) -> pd.DataFrame:
+    """Save predictions to processed data directory"""       
      # Copy the datset with predictions to the processed data directory
+    logger = get_run_logger()
+    logger.info("Saving predictions to processed data directory")
     try:        
         settings.PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
         dest_path = settings.PROCESSED_DATA_DIR / latest_file
@@ -115,11 +124,13 @@ def make_predictions(model: Any, dataset: pd.DataFrame, latest_file: str, scaler
     except Exception as e:
         logger.error(f"Failed to copy file to processed dir: {e}")
         raise
-    logger.info("Predictions completed")
-    return dataset
+    logger.info("Predictions saved successfully")
 
-@task(name="Evaluate and Monior")
-def evaluate_and_monitor(predictions: pd.DataFrame, reference_path="data/processed/processed_data.csv") -> None:
+@task(name="Evaluate and Monitor")
+def evaluate_and_monitor(predictions: pd.DataFrame, 
+                         reference_path="data/processed/data_01.csv",
+                         drift_threshold: float = 0.1,
+                         ) -> None:
     """Generate data and performance drift reports"""
     logger = get_run_logger()
     logger.info("Generating data drift and performance reports")
@@ -147,28 +158,48 @@ def evaluate_and_monitor(predictions: pd.DataFrame, reference_path="data/process
         predictions[cols],
         data_definition=definition
     )
-    reference_data = Dataset.from_pandas(
+    ref_data = Dataset.from_pandas(
         reference_data[cols],
         data_definition=definition
-    )
-
-    
+    )  
     
     # Create evidently reports
     report = Report(metrics=[
         DataDriftPreset(),
-        ClassificationPreset()
-    ])
+        ClassificationPreset(),
+        F1Score(tests=[lt(Reference(relative=drift_threshold))])
+        ]
+        )
+    
+    
     # Run the report
-    eval = report.run(reference_data=reference_data, current_data=current_data)
+    eval = report.run(reference_data=ref_data, current_data=current_data)
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M")
     report_path = f"monitoring/reports/drift_report_{timestamp}.html"    
     eval.save_html(report_path)
     print(f"Drift report saved: {report_path}")     
     logger.info("Data drift and performance reports generated")
-    return report_path
+    return report_path, eval
 
-@flow(name="ML Model Training Flow")
+@task(name="Check Drift")
+def check_thresholds(report_path: Path, eval: Any = None) -> None:
+    """Parse report and trigger alerts or retraining."""
+    # Parse Evidently JSON output or metrics and decide if drift is high.
+    
+    logger = get_run_logger()
+    logger.info("Checking thresholds for drift detection")
+    results = json.loads(eval.json())
+    for test in results['tests']:
+        if "F1" in test['name']:
+            if test['status'] == 'SUCCESS': # reverse logic for F1 we're using lte               
+                logger.info(f"F1 score drift detected") # need to triggger retraining
+                return True
+            else:
+                logger.info(f"F1 score within acceptable range")
+                return False    
+
+
+@flow(name="ML Model Prediction Flow")
 def ml_predict_flow(
     
 ) -> None:
@@ -191,7 +222,32 @@ def ml_predict_flow(
                                    latest_file=latest_file, scaler=scaler)
     
     # Evaluate and monitor
-    report_path = evaluate_and_monitor(predictions=predictions)
+    report_path, eval = evaluate_and_monitor(predictions=predictions, drift_threshold=0.1)
+    
+    # Check thresholds
+    drift_detected = check_thresholds(report_path=report_path, eval=eval)
+
+    # If drift detected, log and potentially trigger retraining
+    if drift_detected:
+        ml_training_flow(
+            data_file = settings.PROCESSED_DATA_DIR / "processed_data.csv",
+            use_hyperparameter_optimization=False
+        )
+        # reload model after retraining
+        model, scaler = load_model()
+        # make new predictions
+        predictions = make_predictions(model=model, dataset=dataset,
+                                       latest_file=latest_file, scaler=scaler)
+        #re-evaluate and monitor
+        report_path, eval = evaluate_and_monitor(predictions=predictions,
+                                                 reference_path="data/processed/processed_data.csv",
+                                                 )
+        # save new predictions
+        save_predictions(dataset=predictions, latest_file=latest_file)
+        
+    else:
+        save_predictions(dataset=predictions, latest_file=latest_file)
+        
 
     # Temp: print classification report
     # print(classification_report(predictions["default payment next month"], predictions["predictions"]))

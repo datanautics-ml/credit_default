@@ -202,7 +202,8 @@ class ModelTrainer:
         
         # Select feature columns (exclude target and metadata)
         exclude_columns = [
-            target_column, 'ID', 'MONTH'  # Exclude categorical and IDs
+            target_column, 'ID', 'MONTH',  # Exclude categorical and IDs
+            'predictions' # Exclude previous predictions if present
         ]
         
         feature_columns = [col for col in features_df.columns if col not in exclude_columns]
