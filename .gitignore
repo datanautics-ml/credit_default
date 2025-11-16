@@ -37,6 +37,7 @@ venv.bak/
 *.swo
 
 # Data and Models
+data/*
 data/raw/*
 data/processed/*
 data/features/*
@@ -74,3 +75,6 @@ great_expectations/uncommitted/
 # OS
 .DS_Store
 Thumbs.db
+
+# Others
+monitoring/reports/*
