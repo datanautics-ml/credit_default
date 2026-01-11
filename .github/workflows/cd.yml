@@ -65,7 +65,7 @@ jobs:
     - name: Check if training data exists
       id: check_data
       run: |
-        if [ -f "data/processed/data_01.csv" ]; then
+        if [ -f "data/raw/data_01.csv" ]; then
           echo "data_exists=true" >> $GITHUB_OUTPUT
           echo "Training data found"
         else
