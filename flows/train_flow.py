@@ -157,6 +157,7 @@ def ml_training_flow(
     logger.info("Starting ML training flow")
 
     # Load data
+    trainer = ModelTrainer()
     dataset = load_data(data_file)
 
     # Train models
