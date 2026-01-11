@@ -2,31 +2,35 @@
 """
 ML training pipeline for materials bandgap prediction
 """
-from pathlib import Path
-from typing import Dict, Any, Tuple
-import pandas as pd
-import numpy as np
-from prefect import flow, task, get_run_logger
-from prefect.artifacts import create_table_artifact, create_markdown_artifact
-import mlflow
 import json
 import os
 import sys
+from pathlib import Path
+from typing import Any, Dict, Tuple
+
+import mlflow
+import numpy as np
+import pandas as pd
+from prefect import flow, get_run_logger, task
+from prefect.artifacts import create_markdown_artifact, create_table_artifact
+
 # Add src to Python path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(str(project_root))
-from src.config.settings import settings
-from src.models.training import  ModelTrainer
-from src.utils.logging import setup_logging
-import joblib
-from evidently import Report
-from evidently.presets import DataDriftPreset, ClassificationPreset
-from evidently import Dataset, DataDefinition, BinaryClassification
-from evidently.metrics import F1Score
-from evidently.tests import gte, lte,lt
-from evidently.future.tests import Reference
 import datetime as dt
+
+import joblib
+from evidently import BinaryClassification, DataDefinition, Dataset, Report
+from evidently.future.tests import Reference
+from evidently.metrics import F1Score
+from evidently.presets import ClassificationPreset, DataDriftPreset
+from evidently.tests import gte, lt, lte
+
 from flows.train_flow import ml_training_flow
+from src.config.settings import settings
+from src.models.training import ModelTrainer
+from src.utils.logging import setup_logging
+
 
 @task(name="Load Data ", retries=1)
 def load_new_data() -> pd.DataFrame:
@@ -35,19 +39,20 @@ def load_new_data() -> pd.DataFrame:
     logger.info((f"Checking processed data from {settings.PROCESSED_DATA_DIR}"))
     processed_files = list(settings.PROCESSED_DATA_DIR.glob("data_*.csv"))
     if not processed_files:
-        latest_file = 'data_01.csv'
-    else:    
+        latest_file = "data_01.csv"
+    else:
         latest_file = sorted(processed_files)[-1].name
-        next_idx = int(latest_file.split('_')[-1].split('.')[0]) + 1
+        next_idx = int(latest_file.split("_")[-1].split(".")[0]) + 1
         next_idx_str = f"{next_idx:02d}"
         latest_file = f"data_{next_idx_str}.csv"
     latest_file_path = settings.DATA_DIR / latest_file
     logger.info(f"Latest processed data file: {latest_file_path}")
-    
+
     logger.info(f"Loading data from {settings.DATA_DIR}")
     data = pd.read_csv(latest_file_path, header=0)
-    logger.info(f"Data shape: {data.shape}")   
+    logger.info(f"Data shape: {data.shape}")
     return data, latest_file
+
 
 @task(name="Load Model")
 def load_model() -> Any:
@@ -57,30 +62,31 @@ def load_model() -> Any:
 
     with settings.MODELS_DIR.joinpath("training_results.json").open("r") as f:
         training_results = json.load(f)
-    
+
     best_model_name = None
-    best_score = float('-inf')    
+    best_score = float("-inf")
     for model_name, results in training_results.items():
-        score = training_results[model_name]['f1']
+        score = training_results[model_name]["f1"]
         if score > best_score:
             best_score = score
-            best_model_name = model_name    
-    model_path = settings.MODELS_DIR / f"{best_model_name}_model.joblib"    
+            best_model_name = model_name
+    model_path = settings.MODELS_DIR / f"{best_model_name}_model.joblib"
     logger.info(f"Best model: {best_model_name}")
-    
+
     try:
         model = joblib.load(model_path)
-        if best_model_name in ['logistic_regression', 'svc', 'ridge']:
+        if best_model_name in ["logistic_regression", "svc", "ridge"]:
             scaler_path = settings.MODELS_DIR / "standard_scaler.joblib"
-            scaler = joblib.load(scaler_path)            
+            scaler = joblib.load(scaler_path)
             logger.info("Model loaded successfully")
             return model, scaler
         else:
             logger.info("Model loaded successfully")
-            return model, None            
+            return model, None
     except Exception as e:
         logger.error(f"Failed to load model: {e}")
         raise
+
 
 @task(name="Make Predictions")
 def make_predictions(model: Any, dataset: pd.DataFrame, latest_file: str, scaler: Any = None) -> pd.DataFrame:
@@ -96,17 +102,18 @@ def make_predictions(model: Any, dataset: pd.DataFrame, latest_file: str, scaler
     else:
         X = dataset[features]
         predictions = model.predict(X)
-    dataset['predictions'] = predictions
+    dataset["predictions"] = predictions
     logger.info("Predictions made successfully")
     return dataset
 
+
 @task(name="Save Predictions")
 def save_predictions(dataset: pd.DataFrame, latest_file: str) -> pd.DataFrame:
-    """Save predictions to processed data directory"""       
-     # Copy the datset with predictions to the processed data directory
+    """Save predictions to processed data directory"""
+    # Copy the datset with predictions to the processed data directory
     logger = get_run_logger()
     logger.info("Saving predictions to processed data directory")
-    try:        
+    try:
         settings.PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
         dest_path = settings.PROCESSED_DATA_DIR / latest_file
         if not dest_path.exists():
@@ -126,11 +133,13 @@ def save_predictions(dataset: pd.DataFrame, latest_file: str) -> pd.DataFrame:
         raise
     logger.info("Predictions saved successfully")
 
+
 @task(name="Evaluate and Monitor")
-def evaluate_and_monitor(predictions: pd.DataFrame, 
-                         reference_path="data/processed/data_01.csv",
-                         drift_threshold: float = 0.1,
-                         ) -> None:
+def evaluate_and_monitor(
+    predictions: pd.DataFrame,
+    reference_path="data/processed/data_01.csv",
+    drift_threshold: float = 0.1,
+) -> None:
     """Generate data and performance drift reports"""
     logger = get_run_logger()
     logger.info("Generating data drift and performance reports")
@@ -144,121 +153,102 @@ def evaluate_and_monitor(predictions: pd.DataFrame,
 
     # create evidently definition for binary classification
     definition = DataDefinition(
-    classification=[BinaryClassification(
-        target="default payment next month",
-        prediction_labels="predictions")],
+        classification=[BinaryClassification(target="default payment next month", prediction_labels="predictions")],
         id_column="ID",
-        categorical_columns=["default payment next month", "predictions", 
-                             "SEX","EDUCATION","MARRIAGE"
-        ]
+        categorical_columns=["default payment next month", "predictions", "SEX", "EDUCATION", "MARRIAGE"],
     )
-    cols = [col for col in predictions.columns if col not in ["MONTH"]]#, "ID"]]
+    cols = [col for col in predictions.columns if col not in ["MONTH"]]  # , "ID"]]
     # create evidently datasets
-    current_data = Dataset.from_pandas(
-        predictions[cols],
-        data_definition=definition
-    )
-    ref_data = Dataset.from_pandas(
-        reference_data[cols],
-        data_definition=definition
-    )  
-    
+    current_data = Dataset.from_pandas(predictions[cols], data_definition=definition)
+    ref_data = Dataset.from_pandas(reference_data[cols], data_definition=definition)
+
     # Create evidently reports
-    report = Report(metrics=[
-        DataDriftPreset(),
-        ClassificationPreset(),
-        F1Score(tests=[lt(Reference(relative=drift_threshold))])
-        ]
-        )
-    
-    
+    report = Report(
+        metrics=[DataDriftPreset(), ClassificationPreset(), F1Score(tests=[lt(Reference(relative=drift_threshold))])]
+    )
+
     # Run the report
     eval = report.run(reference_data=ref_data, current_data=current_data)
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M")
-    report_path = f"monitoring/reports/drift_report_{timestamp}.html"    
+    report_path = f"monitoring/reports/drift_report_{timestamp}.html"
     eval.save_html(report_path)
-    print(f"Drift report saved: {report_path}")     
+    print(f"Drift report saved: {report_path}")
     logger.info("Data drift and performance reports generated")
     return report_path, eval
+
 
 @task(name="Check Drift")
 def check_thresholds(report_path: Path, eval: Any = None) -> None:
     """Parse report and trigger alerts or retraining."""
     # Parse Evidently JSON output or metrics and decide if drift is high.
-    
+
     logger = get_run_logger()
     logger.info("Checking thresholds for drift detection")
     results = json.loads(eval.json())
-    for test in results['tests']:
-        if "F1" in test['name']:
-            if test['status'] == 'SUCCESS': # reverse logic for F1 we're using lte               
-                logger.info(f"F1 score drift detected") # need to triggger retraining
+    for test in results["tests"]:
+        if "F1" in test["name"]:
+            if test["status"] == "SUCCESS":  # reverse logic for F1 we're using lte
+                logger.info(f"F1 score drift detected")  # need to triggger retraining
                 return True
             else:
                 logger.info(f"F1 score within acceptable range")
-                return False    
+                return False
 
 
 @flow(name="ML Model Prediction Flow")
-def ml_predict_flow(
-    
-) -> None:
+def ml_predict_flow() -> None:
     """
     Prefect flow to orchestrate ML model prediction
-    
+
     Args:
 
     """
     logger = setup_logging(name="ML Model Predict Flow")
     logger.info("Starting ML predict flow")
-    
+
     # Load data
     dataset, latest_file = load_new_data()
     # Load model
     model, scaler = load_model()
 
     # Make predictions
-    predictions = make_predictions(model=model, dataset=dataset,
-                                   latest_file=latest_file, scaler=scaler)
-    
+    predictions = make_predictions(model=model, dataset=dataset, latest_file=latest_file, scaler=scaler)
+
     # Evaluate and monitor
     report_path, eval = evaluate_and_monitor(predictions=predictions, drift_threshold=0.1)
-    
+
     # Check thresholds
     drift_detected = check_thresholds(report_path=report_path, eval=eval)
 
     # If drift detected, log and potentially trigger retraining
     if drift_detected:
-        ml_training_flow(
-            data_file = settings.PROCESSED_DATA_DIR / "processed_data.csv",
-            use_hyperparameter_optimization=False
-        )
+        ml_training_flow(data_file=settings.PROCESSED_DATA_DIR / "processed_data.csv", use_hyperparameter_optimization=False)
         # reload model after retraining
         model, scaler = load_model()
         # make new predictions
-        predictions = make_predictions(model=model, dataset=dataset,
-                                       latest_file=latest_file, scaler=scaler)
-        #re-evaluate and monitor
-        report_path, eval = evaluate_and_monitor(predictions=predictions,
-                                                 reference_path="data/processed/processed_data.csv",
-                                                 )
+        predictions = make_predictions(model=model, dataset=dataset, latest_file=latest_file, scaler=scaler)
+        # re-evaluate and monitor
+        report_path, eval = evaluate_and_monitor(
+            predictions=predictions,
+            reference_path="data/processed/processed_data.csv",
+        )
         # save new predictions
         save_predictions(dataset=predictions, latest_file=latest_file)
-        
+
     else:
         save_predictions(dataset=predictions, latest_file=latest_file)
-        
 
     # Temp: print classification report
     # print(classification_report(predictions["default payment next month"], predictions["predictions"]))
-    
+
     # Train models
     # training_results = train_ml_models(
     #     dataset,
     #     use_hyperparameter_optimization=use_hyperparameter_optimization
     # )
-    
+
     logger.info("ML prediction flow completed")
+
 
 if __name__ == "__main__":
     ml_predict_flow()
