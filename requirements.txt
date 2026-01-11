@@ -10,29 +10,29 @@ statsmodels
 # MLOps and Orchestration
 prefect
 mlflow
-feast
+#feast
 dvc
 great-expectations
 
 # Model Explainability
 shap
-lime
+#lime
 
 # Data Storage and Processing
-sqlalchemy
+#sqlalchemy
 # sqlite3  # Built-in with Python
 pyarrow
-fastparquet
+#fastparquet
 
 # Web App
-streamlit
-plotly
-streamlit-plotly-events
+# streamlit
+# plotly
+# streamlit-plotly-events
 
 # Utilities
 python-dotenv
 pydantic
-click
+# click
 tqdm
 joblib
 requests
@@ -46,5 +46,5 @@ flake8
 mypy
 
 # Jupyter for development
-jupyter
-jupyterlab
+# jupyter
+# jupyterlab
