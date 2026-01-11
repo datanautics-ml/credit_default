@@ -12,7 +12,7 @@ on:
       train_model:
         description: 'Train new model'
         required: false
-        default: 'true'
+        default: true
         type: boolean
   schedule:
     # Run weekly on Monday at 2 AM UTC
