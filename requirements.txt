@@ -6,6 +6,7 @@ scikit-learn
 xgboost
 lightgbm
 statsmodels
+xlrd
 
 # MLOps and Orchestration
 prefect
