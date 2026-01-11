@@ -1,0 +1,23 @@
+[flake8]
+max-line-length = 127
+extend-ignore = E203, E266, E501, W503
+max-complexity = 10
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    env,
+    .env,
+    build,
+    dist,
+    *.egg-info,
+    .pytest_cache,
+    .mypy_cache,
+    mlruns,
+    mlflow.db,
+    .ipynb_checkpoints
+per-file-ignores =
+    __init__.py:F401
+    flows/*:F401
+    tests/*:F401
