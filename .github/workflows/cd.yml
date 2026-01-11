@@ -58,9 +58,7 @@ jobs:
     
     - name: Start Prefect orchestration server
       run: |
-        nohup prefect server start
-        echo $! > prefect.pid
-        sleep 10
+        prefect server start --background
         echo "Prefect server started (PID: $(cat prefect.pid))"
         # Verify Prefect server is running
         timeout 30 bash -c 'until curl -s http://localhost:4200/api/health > /dev/null; do sleep 2; done' || echo "Prefect health check timeout (may still be starting)"
