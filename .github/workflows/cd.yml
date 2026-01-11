@@ -107,7 +107,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     environment:
       name: production
-      url: https://your-deployment-url.com
+      url: https://deployment-url.com
     
     steps:
     - name: Checkout code
@@ -123,5 +123,5 @@ jobs:
     - name: Deploy model
       run: |
         echo "Model deployment step"
-        echo "Add your deployment logic here (e.g., upload to model registry, deploy to cloud, etc.)"
+        echo "Add deployment logic here (e.g., upload to model registry, deploy to cloud, etc.)"
       continue-on-error: true
