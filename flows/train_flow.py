@@ -143,9 +143,7 @@ def train_ml_models(dataset: pd.DataFrame, use_hyperparameter_optimization: bool
 
 
 @flow(name="ML Model Training Flow")
-def ml_training_flow(
-    data_file: Optional[Path] = None, use_hyperparameter_optimization: bool = True
-) -> None:
+def ml_training_flow(data_file: Optional[Path] = None, use_hyperparameter_optimization: bool = True) -> None:
     """
     Prefect flow to orchestrate ML model training
 
