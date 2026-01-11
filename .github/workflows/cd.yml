@@ -55,6 +55,11 @@ jobs:
         mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./mlruns &
         sleep 5
       continue-on-error: true
+    
+    - name: Start Prefect orchestration server
+      run: |
+        prefect server start
+      continue-on-error: true
 
     - name: Set environment variables
       run: |
