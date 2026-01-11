@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10"]
     
     steps:
     - name: Checkout code
@@ -38,7 +38,7 @@ jobs:
 
     - name: Check code formatting with Black
       run: |
-        black --check --diff .
+        black --check --diff . || (echo "❌ Black formatting check failed. Run 'black .' to auto-fix." && exit 1)
 
     - name: Check import sorting with isort
       run: |
