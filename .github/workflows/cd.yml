@@ -59,6 +59,7 @@ jobs:
     - name: Start Prefect orchestration server
       run: |
         prefect server start
+        sleep 5
       continue-on-error: true
 
     - name: Set environment variables
