@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Optional
 
 import mlflow
 import numpy as np
@@ -144,7 +144,7 @@ def train_ml_models(dataset: pd.DataFrame, use_hyperparameter_optimization: bool
 
 @flow(name="ML Model Training Flow")
 def ml_training_flow(
-    data_file: Path = settings.DATA_DIR / "data_01.csv", use_hyperparameter_optimization: bool = True
+    data_file: Optional[Path] = None, use_hyperparameter_optimization: bool = True
 ) -> None:
     """
     Prefect flow to orchestrate ML model training
@@ -157,6 +157,8 @@ def ml_training_flow(
     logger.info("Starting ML training flow")
 
     # Load data
+    if data_file is None:
+        data_file = settings.DATA_DIR / "data_01.csv"
     trainer = ModelTrainer()
     dataset = load_data(data_file)
 
