@@ -1,6 +1,7 @@
 """
 Unit tests for data preparation functions
 """
+
 from pathlib import Path
 from unittest.mock import patch
 
@@ -31,21 +32,21 @@ class TestDataPreparation:
     def test_prepare_data_removes_id_column(self, trainer, sample_data):
         """Test that ID column is removed during data preparation"""
         X_train, X_test, y_train, y_test = trainer.prepare_data(sample_data)
-        
+
         assert "ID" not in X_train.columns
         assert "ID" not in X_test.columns
 
     def test_prepare_data_removes_target_column(self, trainer, sample_data):
         """Test that target column is removed from features"""
         X_train, X_test, y_train, y_test = trainer.prepare_data(sample_data)
-        
+
         assert "default payment next month" not in X_train.columns
         assert "default payment next month" not in X_test.columns
 
     def test_prepare_data_maintains_feature_columns(self, trainer, sample_data):
         """Test that feature columns are preserved"""
         X_train, X_test, y_train, y_test = trainer.prepare_data(sample_data)
-        
+
         # Check that feature columns are present
         assert "LIMIT_BAL" in X_train.columns
         assert "LIMIT_BAL" in X_test.columns
@@ -55,10 +56,10 @@ class TestDataPreparation:
     def test_prepare_data_correct_split_ratio(self, trainer, sample_data):
         """Test that train-test split maintains correct ratio"""
         X_train, X_test, y_train, y_test = trainer.prepare_data(sample_data)
-        
+
         total_samples = len(X_train) + len(X_test)
         test_ratio = len(X_test) / total_samples
-        
+
         # Allow small tolerance for rounding
         assert abs(test_ratio - 0.2) < 0.05
 
@@ -66,7 +67,7 @@ class TestDataPreparation:
         """Test that data split is reproducible with same random state"""
         X_train1, X_test1, y_train1, y_test1 = trainer.prepare_data(sample_data)
         X_train2, X_test2, y_train2, y_test2 = trainer.prepare_data(sample_data)
-        
+
         # Check that splits are identical
         pd.testing.assert_frame_equal(X_train1, X_train2)
         pd.testing.assert_frame_equal(X_test1, X_test2)

@@ -1,6 +1,7 @@
 """
 Pytest configuration and shared fixtures
 """
+
 import tempfile
 import warnings
 from pathlib import Path
@@ -26,7 +27,7 @@ def sample_data() -> pd.DataFrame:
     """Create sample credit default data for testing"""
     np.random.seed(42)
     n_samples = 100
-    
+
     data = pd.DataFrame(
         {
             "ID": range(1, n_samples + 1),
@@ -71,45 +72,45 @@ def data_dir_with_files(temp_dir: Path, sample_data: pd.DataFrame) -> Path:
     """
     Create a data directory with monthly CSV files that ModelTrainer expects.
     This simulates the data setup that happens in ModelTrainer.__init__
-    
+
     ModelTrainer.__init__ checks for files like data_01.csv through data_12.csv.
     If they don't exist, it tries to read from "default of credit card clients.xls".
     By creating these files here, we ensure the initialization doesn't fail.
     """
     data_dir = temp_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Create monthly data files (data_01.csv through data_12.csv)
     # Use the sample_data and split it across months
     np.random.seed(42)  # Ensure reproducibility
     sample_data_with_month = sample_data.copy()
     sample_data_with_month.insert(1, column="MONTH", value=np.random.randint(1, 13, size=len(sample_data)))
-    
+
     # Ensure each month has at least some data
     for month in range(1, 13):
         monthly_data = sample_data_with_month[sample_data_with_month["MONTH"] == month].copy()
-        
+
         # If a month has no data, use a subset of the sample data
         if len(monthly_data) == 0:
             # Take a small subset and assign it to this month
             monthly_data = sample_data.head(10).copy()
             monthly_data.insert(1, column="MONTH", value=month)
-        
+
         # Ensure MONTH column is present and set correctly
         if "MONTH" not in monthly_data.columns:
             monthly_data.insert(1, column="MONTH", value=month)
         else:
             monthly_data["MONTH"] = month
-        
+
         # Save to CSV file
         monthly_data.to_csv(data_dir / f"data_{month:02d}.csv", index=False)
-    
+
     # Verify all expected files were created
     expected_files = [f"data_{i:02d}.csv" for i in range(1, 13)]
     created_files = [f.name for f in data_dir.iterdir() if f.is_file()]
     for expected_file in expected_files:
         assert expected_file in created_files, f"Failed to create {expected_file}"
-    
+
     return data_dir
 
 
@@ -117,9 +118,9 @@ def data_dir_with_files(temp_dir: Path, sample_data: pd.DataFrame) -> Path:
 def sample_train_test_data(sample_data: pd.DataFrame):
     """Create train/test split from sample data"""
     from sklearn.model_selection import train_test_split
-    
+
     X = sample_data.drop(columns=["default payment next month", "ID"])
     y = sample_data["default payment next month"]
-    
+
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     return X_train, X_test, y_train, y_test

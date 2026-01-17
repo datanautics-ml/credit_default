@@ -1,6 +1,7 @@
 """
 Unit tests for Settings configuration
 """
+
 import os
 from pathlib import Path
 from unittest.mock import patch
@@ -16,7 +17,7 @@ class TestSettings:
     def test_settings_initialization(self):
         """Test that Settings initializes with default values"""
         settings = Settings()
-        
+
         assert settings.PROJECT_ROOT is not None
         assert isinstance(settings.DATA_DIR, Path)
         assert isinstance(settings.MODELS_DIR, Path)
@@ -28,7 +29,7 @@ class TestSettings:
     def test_settings_paths_exist(self):
         """Test that Settings creates required paths"""
         settings = Settings()
-        
+
         # Paths should be Path objects
         assert isinstance(settings.DATA_DIR, Path)
         assert isinstance(settings.RAW_DATA_DIR, Path)
@@ -45,7 +46,7 @@ class TestSettings:
     def test_settings_default_values(self):
         """Test default configuration values"""
         settings = Settings()
-        
+
         assert settings.MLFLOW_TRACKING_URI == "http://localhost:5000"
         assert settings.MLFLOW_EXPERIMENT_NAME == "materials_bandgap_prediction"
         assert settings.PREFECT_API_URL == "http://localhost:4200/api"
@@ -57,7 +58,7 @@ class TestSettings:
     def test_settings_path_relationships(self):
         """Test that path relationships are correct"""
         settings = Settings()
-        
+
         assert settings.RAW_DATA_DIR.parent == settings.DATA_DIR
         assert settings.PROCESSED_DATA_DIR.parent == settings.DATA_DIR
         assert settings.FEATURES_DATA_DIR.parent == settings.DATA_DIR
