@@ -37,7 +37,7 @@ venv.bak/
 *.swo
 
 # Data and Models
-data/*
+# data/*
 data/raw/*
 data/processed/*
 data/features/*
@@ -78,3 +78,4 @@ Thumbs.db
 
 # Others
 monitoring/reports/*
+.coverage*

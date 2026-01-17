@@ -50,3 +50,10 @@ python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --cov=src --cov=flows --cov-report=xml --cov-report=html --cov-report=term-missing"
+filterwarnings = [
+    "ignore::UserWarning:sklearn.*",
+    "ignore:.*convergence.*:UserWarning",
+    "ignore:.*did not converge.*:UserWarning",
+    "ignore:.*Maximum number of iterations.*:UserWarning",
+    "ignore::RuntimeWarning",
+]
